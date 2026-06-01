@@ -1,8 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: false, // disable for canvas/RAF compatibility
+  reactStrictMode: false,
+  output: 'export',              
+  basePath: '/Ascii-Art', 
   webpack: (config) => {
-    // Allow mediapipe wasm files
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
