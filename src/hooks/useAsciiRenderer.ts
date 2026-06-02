@@ -92,20 +92,15 @@ export function useAsciiRenderer(
   }, []);
 
   const drawRecordingOverlays = useCallback((ctx: CanvasRenderingContext2D, cw: number, ch: number) => {
-    // Scanlines
     ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
     for (let y = 0; y < ch; y += 4) {
       ctx.fillRect(0, y, cw, 2);
     }
-
-    // CRT Vignette
     const gradient = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.5, cw / 2, ch / 2, Math.min(cw, ch) * 0.85);
     gradient.addColorStop(0, 'transparent');
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0.85)');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, cw, ch);
-
-    // Dot grid 
     ctx.fillStyle = 'rgba(0, 255, 65, 0.03)';
     const spacing = 20;
     for (let x = 0; x < cw; x += spacing) {
@@ -238,64 +233,66 @@ export function useAsciiRenderer(
         ctx.font = `${charH}px "JetBrains Mono", "Courier New", monospace`;
       }
 
-      // --- Subject Render ---
+      // --- Subject Rendering ---
       const chars = CHAR_SETS[s.charSet];
       const customColorMap = s.colorMode === 'custom' ? getCustomColorMap(s) : [];
       const { contrast, brightness: brightAdj, edgeEnhancement, lumaThreshold } = s;
 
       for (let row = 0; row < rows; row++) {
         const topY = row * charH;
-        let segmentStart = 0;
-        let segmentText = '';
-        let currentStyle = '';
 
-        const flushSegment = (endCol: number) => {
-          if (segmentText.length > 0) {
-            ctx.fillStyle = currentStyle || s.bgColor;
-            ctx.fillText(segmentText, segmentStart * charW, topY);
-            segmentText = '';
-          }
-          segmentStart = endCol;
-        };
+        if (s.renderStyle === 'ascii') {
+          // ----- ASCII mode (text segment grouping) -----
+          let segmentStart = 0;
+          let segmentText = '';
+          let currentStyle = '';
 
-        for (let col = 0; col < cols; col++) {
-          const cellIdx = row * cols + col;
-          const imgIdx = cellIdx * 4;
-          const r = imageData[imgIdx];
-          const g = imageData[imgIdx + 1];
-          const b = imageData[imgIdx + 2];
-          const rawLuma = luma(r, g, b) / 255;
-
-          if (maskPixels) {
-            const alpha = maskPixels[cellIdx] / 255.0;
-            if (alpha < 0.1) {
-              flushSegment(col);
-              continue;
+          const flushSegment = (endCol: number) => {
+            if (segmentText.length > 0) {
+              ctx.fillStyle = currentStyle || s.bgColor;
+              ctx.fillText(segmentText, segmentStart * charW, topY);
+              segmentText = '';
             }
-            if (rawLuma < lumaThreshold && alpha < 0.5) {
-              flushSegment(col);
-              continue;
+            segmentStart = endCol;
+          };
+
+          for (let col = 0; col < cols; col++) {
+            const cellIdx = row * cols + col;
+            const imgIdx = cellIdx * 4;
+            const r = imageData[imgIdx];
+            const g = imageData[imgIdx + 1];
+            const b = imageData[imgIdx + 2];
+            const rawLuma = luma(r, g, b) / 255;
+
+            if (maskPixels) {
+              const alpha = maskPixels[cellIdx] / 255.0;
+              if (alpha < 0.1) {
+                flushSegment(col);
+                continue;
+              }
+              if (rawLuma < lumaThreshold && alpha < 0.5) {
+                flushSegment(col);
+                continue;
+              }
             }
-          }
 
-          let normalizedLuma = formatLuminance(rawLuma * 255, contrast, brightAdj);
+            let normalizedLuma = formatLuminance(rawLuma * 255, contrast, brightAdj);
 
-          if (edgeEnhancement > 0 && row > 0 && row < rows - 1 && col > 0 && col < cols - 1) {
-            const edgeIntensity = calculateEdge(imgIdx, cols, imageData);
-            if (edgeIntensity > 15) {
-              normalizedLuma += (edgeIntensity / 255) * edgeEnhancement;
-              normalizedLuma = Math.min(1, Math.max(0, normalizedLuma));
+            if (edgeEnhancement > 0 && row > 0 && row < rows - 1 && col > 0 && col < cols - 1) {
+              const edgeIntensity = calculateEdge(imgIdx, cols, imageData);
+              if (edgeIntensity > 15) {
+                normalizedLuma += (edgeIntensity / 255) * edgeEnhancement;
+                normalizedLuma = Math.min(1, Math.max(0, normalizedLuma));
+              }
             }
-          }
 
-          let style = '';
-          let ch = ' ';
-          if (s.renderStyle === 'ascii') {
-            ch = brightnessToChar(normalizedLuma, chars);
+            const ch = brightnessToChar(normalizedLuma, chars);
             if (ch === ' ') {
               flushSegment(col);
               continue;
             }
+
+            let style = '';
             if (s.colorMode === 'custom') {
               const stepIdx = Math.round(normalizedLuma * CUSTOM_LUMA_STEPS);
               style = customColorMap[stepIdx];
@@ -306,7 +303,56 @@ export function useAsciiRenderer(
               const b2 = Math.round((b / 255) * (levels - 1)) * Math.floor(255 / (levels - 1));
               style = `rgb(${r2},${g2},${b2})`;
             }
-          } else {
+
+            if (style !== currentStyle) {
+              flushSegment(col);
+              currentStyle = style;
+            }
+            segmentText += ch;
+          }
+          flushSegment(cols);
+
+        } else {
+          // ----- Pixel mode (rectangle segment grouping) -----
+          let segmentStartCol = 0;
+          let currentStyle = '';
+
+          const flushPixelSegment = (endCol: number) => {
+            if (segmentStartCol < endCol) {
+              ctx.fillStyle = currentStyle || s.bgColor;
+              ctx.fillRect(segmentStartCol * charW, topY, (endCol - segmentStartCol) * charW, charH);
+            }
+            segmentStartCol = endCol;
+          };
+
+          for (let col = 0; col < cols; col++) {
+            const cellIdx = row * cols + col;
+            const imgIdx = cellIdx * 4;
+            const r = imageData[imgIdx];
+            const g = imageData[imgIdx + 1];
+            const b = imageData[imgIdx + 2];
+            const rawLuma = luma(r, g, b) / 255;
+
+            // Skip background cells (keep matrix rain visible)
+            if (maskPixels) {
+              const alpha = maskPixels[cellIdx] / 255.0;
+              if (alpha < 0.1 || (rawLuma < lumaThreshold && alpha < 0.5)) {
+                flushPixelSegment(col); // end current segment, leave background exposed
+                continue;
+              }
+            }
+
+            let normalizedLuma = formatLuminance(rawLuma * 255, contrast, brightAdj);
+
+            if (edgeEnhancement > 0 && row > 0 && row < rows - 1 && col > 0 && col < cols - 1) {
+              const edgeIntensity = calculateEdge(imgIdx, cols, imageData);
+              if (edgeIntensity > 15) {
+                normalizedLuma += (edgeIntensity / 255) * edgeEnhancement;
+                normalizedLuma = Math.min(1, Math.max(0, normalizedLuma));
+              }
+            }
+
+            let style = '';
             if (s.colorMode === 'color') {
               const levels = COLOR_RGB_STEPS;
               const r2 = Math.round((r / 255) * (levels - 1)) * Math.floor(255 / (levels - 1));
@@ -317,16 +363,14 @@ export function useAsciiRenderer(
               const stepIdx = Math.round(normalizedLuma * CUSTOM_LUMA_STEPS);
               style = customColorMap[stepIdx];
             }
-            ch = '█';
-          }
 
-          if (style !== currentStyle) {
-            flushSegment(col);
-            currentStyle = style;
+            if (style !== currentStyle) {
+              flushPixelSegment(col);
+              currentStyle = style;
+            }
           }
-          segmentText += ch;
+          flushPixelSegment(cols);
         }
-        flushSegment(cols);
       }
 
       if (recordingRef?.current) {
