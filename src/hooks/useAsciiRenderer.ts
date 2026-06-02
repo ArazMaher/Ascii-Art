@@ -268,10 +268,15 @@ export function useAsciiRenderer(
               const alpha = maskPixels[cellIdx] / 255.0;
               if (alpha < 0.1) {
                 flushSegment(col);
+                // After skip, ensure next segment starts after this column
+                segmentStart = col + 1;
+                currentStyle = '';
                 continue;
               }
               if (rawLuma < lumaThreshold && alpha < 0.5) {
                 flushSegment(col);
+                segmentStart = col + 1;
+                currentStyle = '';
                 continue;
               }
             }
@@ -289,6 +294,8 @@ export function useAsciiRenderer(
             const ch = brightnessToChar(normalizedLuma, chars);
             if (ch === ' ') {
               flushSegment(col);
+              segmentStart = col + 1;
+              currentStyle = '';
               continue;
             }
 
@@ -337,7 +344,10 @@ export function useAsciiRenderer(
             if (maskPixels) {
               const alpha = maskPixels[cellIdx] / 255.0;
               if (alpha < 0.1 || (rawLuma < lumaThreshold && alpha < 0.5)) {
-                flushPixelSegment(col); // end current segment, leave background exposed
+                flushPixelSegment(col);
+                // Advance past the skipped cell and reset style to start a fresh segment later
+                segmentStartCol = col + 1;
+                currentStyle = '';
                 continue;
               }
             }
