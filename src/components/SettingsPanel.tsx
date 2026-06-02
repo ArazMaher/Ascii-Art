@@ -31,6 +31,18 @@ const DEFAULT_SETTINGS: RendererSettings = {
   matrixSpeed: 0.3,
 };
 
+// Character sets shown in the UI (exclude matrix and cyber, include dots)
+const visibleCharSets: CharSet[] = [
+  'detailed',
+  'simple',
+  'binary',
+  'blocks',
+  'braille',
+  'hacker',
+  'edge',
+  'dots',
+];
+
 export default function SettingsPanel({
   settings,
   onSettingsChange,
@@ -91,11 +103,11 @@ export default function SettingsPanel({
               </div>
             </div>
 
-            {/* Character Structure */}
+            {/* Character Structure – custom list without matrix/cyber, with dots */}
             <div className="space-y-4">
               <label className="text-[11px] uppercase tracking-widest opacity-50 border-b border-[#00FF41]/20 pb-2 block">Character Structure</label>
               <div className="grid grid-cols-2 gap-2">
-                {(Object.keys(CHAR_SETS) as CharSet[]).slice(0, 8).map(key => (
+                {visibleCharSets.map(key => (
                   <button
                     key={key}
                     disabled={settings.renderStyle === 'pixel'}

@@ -92,15 +92,20 @@ export function useAsciiRenderer(
   }, []);
 
   const drawRecordingOverlays = useCallback((ctx: CanvasRenderingContext2D, cw: number, ch: number) => {
+    // Scanlines
     ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
     for (let y = 0; y < ch; y += 4) {
       ctx.fillRect(0, y, cw, 2);
     }
+
+    // CRT Vignette
     const gradient = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.5, cw / 2, ch / 2, Math.min(cw, ch) * 0.85);
     gradient.addColorStop(0, 'transparent');
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0.85)');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, cw, ch);
+
+    // Dot grid 
     ctx.fillStyle = 'rgba(0, 255, 65, 0.03)';
     const spacing = 20;
     for (let x = 0; x < cw; x += spacing) {
@@ -233,7 +238,7 @@ export function useAsciiRenderer(
         ctx.font = `${charH}px "JetBrains Mono", "Courier New", monospace`;
       }
 
-      // --- Subject Rendering ---
+      // --- Subject Render (ASCII & PIXEL) ---
       const chars = CHAR_SETS[s.charSet];
       const customColorMap = s.colorMode === 'custom' ? getCustomColorMap(s) : [];
       const { contrast, brightness: brightAdj, edgeEnhancement, lumaThreshold } = s;
@@ -242,7 +247,7 @@ export function useAsciiRenderer(
         const topY = row * charH;
 
         if (s.renderStyle === 'ascii') {
-          // ----- ASCII mode (text segment grouping) -----
+          // ----- ASCII mode (text segments, as before) -----
           let segmentStart = 0;
           let segmentText = '';
           let currentStyle = '';
@@ -268,15 +273,10 @@ export function useAsciiRenderer(
               const alpha = maskPixels[cellIdx] / 255.0;
               if (alpha < 0.1) {
                 flushSegment(col);
-                // After skip, ensure next segment starts after this column
-                segmentStart = col + 1;
-                currentStyle = '';
                 continue;
               }
               if (rawLuma < lumaThreshold && alpha < 0.5) {
                 flushSegment(col);
-                segmentStart = col + 1;
-                currentStyle = '';
                 continue;
               }
             }
@@ -294,8 +294,6 @@ export function useAsciiRenderer(
             const ch = brightnessToChar(normalizedLuma, chars);
             if (ch === ' ') {
               flushSegment(col);
-              segmentStart = col + 1;
-              currentStyle = '';
               continue;
             }
 
@@ -320,7 +318,7 @@ export function useAsciiRenderer(
           flushSegment(cols);
 
         } else {
-          // ----- Pixel mode (rectangle segment grouping) -----
+          // ----- Pixel mode (solid rectangles) -----
           let segmentStartCol = 0;
           let currentStyle = '';
 
@@ -340,16 +338,21 @@ export function useAsciiRenderer(
             const b = imageData[imgIdx + 2];
             const rawLuma = luma(r, g, b) / 255;
 
-            // Skip background cells (keep matrix rain visible)
+            // Determine if we should skip this cell (background)
+            let skip = false;
             if (maskPixels) {
               const alpha = maskPixels[cellIdx] / 255.0;
               if (alpha < 0.1 || (rawLuma < lumaThreshold && alpha < 0.5)) {
-                flushPixelSegment(col);
-                // Advance past the skipped cell and reset style to start a fresh segment later
-                segmentStartCol = col + 1;
-                currentStyle = '';
-                continue;
+                skip = true;
               }
+            }
+
+            if (skip) {
+              // Close current segment, then reset start to next column so we don't stretch across background
+              flushPixelSegment(col);
+              segmentStartCol = col + 1;
+              currentStyle = '';
+              continue;
             }
 
             let normalizedLuma = formatLuminance(rawLuma * 255, contrast, brightAdj);

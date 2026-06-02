@@ -1,4 +1,4 @@
-export type CharSet = 'detailed' | 'simple' | 'binary' | 'blocks' | 'matrix' | 'braille' | 'hacker' | 'cyber' | 'edge';
+export type CharSet = 'detailed' | 'simple' | 'binary' | 'blocks' | 'matrix' | 'braille' | 'hacker' | 'cyber' | 'edge' | 'dots';
 export type RenderStyle = 'ascii' | 'pixel';
 export type ColorMode = 'custom' | 'color';
 
@@ -12,6 +12,7 @@ export const CHAR_SETS: Record<CharSet, string> = {
   hacker: ' <>/?!@#$%^&*()_+{}|[]\\;',
   cyber: ' ▖▗▘▙▚▛▜▝▞▟▢▣▤▥▦▧▨',
   edge: '  /\\\\|-_',
+  dots: ' .·●○',   // space → dot → middle dot → black circle → white circle
 };
 
 // Extremely optimized luma calc
@@ -51,8 +52,6 @@ export function calculateEdge(idx: number, imgW: number, data: Uint8ClampedArray
   const right = data[idx + 4];
   const top = data[idx - rowOffset];
   const bottom = data[idx + rowOffset];
-
-  const center = data[idx];
 
   const gx = right - left;
   const gy = bottom - top;
